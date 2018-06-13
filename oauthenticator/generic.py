@@ -19,7 +19,7 @@ from jupyterhub.auth import LocalAuthenticator
 from traitlets import Unicode, Dict
 
 from .oauth2 import OAuthLoginHandler, OAuthenticator
-
+import getpass
 
 class GenericEnvMixin(OAuth2Mixin):
     _OAUTH_ACCESS_TOKEN_URL = os.environ.get('OAUTH2_TOKEN_URL', '')
@@ -33,7 +33,7 @@ class GenericLoginHandler(OAuthLoginHandler, GenericEnvMixin):
 class GenericOAuthenticator(OAuthenticator):
 
     login_service = Unicode(
-        "GenericOAuth2",
+        "SAP Login",
         config=True
     )
 
@@ -44,16 +44,6 @@ class GenericOAuthenticator(OAuthenticator):
         config=True,
         help="Userdata url to get user data login information"
     )
-    token_url = Unicode(
-        os.environ.get('OAUTH2_TOKEN_URL', ''),
-        config=True,
-        help="Access token endpoint URL"
-    )
-    extra_params = Dict(
-        os.environ.get('OAUTH2_AUTHENTICATION_PARAMS', {}),
-        help="Extra parameters for first POST request"
-    ).tag(config=True)
-
     username_key = Unicode(
         os.environ.get('OAUTH2_USERNAME_KEY', 'username'),
         config=True,
@@ -70,9 +60,16 @@ class GenericOAuthenticator(OAuthenticator):
         help="Userdata method to get user data login information"
     )
 
+    token_url = Unicode(
+        os.environ.get('OAUTH2_TOKEN_URL', 'GET'),
+        config=True,
+        help="Userdata method to get user data login information"
+    )
+
     @gen.coroutine
     def authenticate(self, handler, data=None):
         code = handler.get_argument("code")
+        print("Let's do a test")
         # TODO: Configure the curl_httpclient for tornado
         http_client = AsyncHTTPClient()
 
@@ -81,12 +78,8 @@ class GenericOAuthenticator(OAuthenticator):
             code=code,
             grant_type='authorization_code'
         )
-        params.update(self.extra_params)
 
-        if self.token_url:
-            url = self.token_url
-        else:
-            raise ValueError("Please set the OAUTH2_TOKEN_URL environment variable")
+        url = self.token_url
 
         b64key = base64.b64encode(
             bytes(
@@ -109,42 +102,39 @@ class GenericOAuthenticator(OAuthenticator):
         resp = yield http_client.fetch(req)
 
         resp_json = json.loads(resp.body.decode('utf8', 'replace'))
-
+        print (resp_json)
         access_token = resp_json['access_token']
-        refresh_token = resp_json.get('refresh_token', None)
         token_type = resp_json['token_type']
-        scope = (resp_json.get('scope', '')).split(' ')
-
+        print(handler.get_secure_cookie("cookie"))
+        print(handler.get_current_user())
+        print(handler.get_secure_cookie("user_id"))
+        print(handler.get_login_url())
+        print(os.environ.get('VCAP_SERVICES'))
         # Determine who the logged in user is
-        headers = {
-            "Accept": "application/json",
-            "User-Agent": "JupyterHub",
-            "Authorization": "{} {}".format(token_type, access_token)
-        }
-        if self.userdata_url:
-            url = url_concat(self.userdata_url, self.userdata_params)
-        else:
-            raise ValueError("Please set the OAUTH2_USERDATA_URL environment variable")
+        print(getpass.getuser())
 
-        req = HTTPRequest(url,
-                          method=self.userdata_method,
-                          headers=headers,
-                          body=urllib.parse.urlencode({'access_token': access_token})
-                          )
-        resp = yield http_client.fetch(req)
-        resp_json = json.loads(resp.body.decode('utf8', 'replace'))
+        #headers = {
+        #    "Accept": "application/json",
+        #    "User-Agent": "JupyterHub",
+        #    "Authorization": "{} {}".format(token_type, access_token)
+        #}
+        #url = url_concat(self.userdata_url, self.userdata_params)
 
-        if not resp_json.get(self.username_key):
-            self.log.error("OAuth user contains no key %s: %s", self.username_key, resp_json)
-            return
+        #req = HTTPRequest(url,
+        #                  method=self.userdata_method,
+        #                  headers=headers,
+        #                  )
+        #resp = yield http_client.fetch(req)
+        #resp_json = json.loads(resp.body.decode('utf8', 'replace'))
 
+        #if not resp_json.get(self.username_key):
+        #    self.log.error("OAuth user contains no key %s: %s", self.username_key, resp_json)
+        #    return
         return {
-            'name': resp_json.get(self.username_key),
+            'name': getpass.getuser(),
             'auth_state': {
                 'access_token': access_token,
-                'refresh_token': refresh_token,
                 'oauth_user': resp_json,
-                'scope': scope,
             }
         }
 
